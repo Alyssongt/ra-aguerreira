@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "194977970184",
+    "project_id": "racaguerreira-e7224",
+    "storage_bucket": "racaguerreira-e7224.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:194977970184:android:6b85cf68913565fa10f9bd",
+        "android_client_info": {
+          "package_name": "com.conpany.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "194977970184-a60ar197aeltch2jom08kmvu1n7for5k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3_rBL7e5oh78XILBqqBOrrz1bKBKrZ10"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "194977970184-a60ar197aeltch2jom08kmvu1n7for5k.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

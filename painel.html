@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raça Guerreira - Controle de Membros</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <div class="max-w-5xl mx-auto p-4">
+    <h1 class="text-3xl font-bold text-center mb-6">Raça Guerreira - Controle de Membros</h1>
+    <button onclick="logout()" class="mb-4 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Sair</button>
+
+    <!-- Seu código do controle de membros aqui -->
+    <!-- ... todo seu código que você postou no painel ... -->
+
+  </div>
+
+  <script>
+    // Se não estiver logado, redireciona para login
+    if (localStorage.getItem("logado") !== "true") {
+      window.location.href = "login.html";
+    }
+
+    function logout() {
+      localStorage.removeItem("logado");
+      window.location.href = "login.html";
+    }
+  </script>
+</body>
+</html>
