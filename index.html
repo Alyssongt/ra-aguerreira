@@ -332,8 +332,27 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getFirestore(app);
+
+async function carregarMembros() {
+  const membrosCol = collection(db, "membros"); // nome da coleção
+  const snapshot = await getDocs(membrosCol);
+  const tabela = document.getElementById("tabelaMembros"); // sua tabela HTML
+
+  // Limpar tabela antes de preencher
+  tabela.innerHTML = "";
+
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    const row = tabela.insertRow();
+    row.insertCell(0).innerText = data.nome;
+    row.insertCell(1).innerText = data.idade;
+    row.insertCell(2).innerText = data.sexo;
+    // adicione mais campos conforme necessário
+  });
+}
+
+window.onload = carregarMembros;
 
 /* ==================== UI helpers ==================== */
     const authSection = document.getElementById("authSection");
@@ -432,7 +451,7 @@ const db = getFirestore(app);
     document.getElementById("btnDesativado").onclick = () => { statusAtual="Desativado"; document.getElementById("statusSelecionado").textContent="Desativado"; };
 
     function limparCampos(){
-      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"];
+      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","estado","];
       campos.forEach(id => {
         if(id==="sexo") document.getElementById(id).selectedIndex = 0;
         else document.getElementById(id).value = "";
@@ -513,7 +532,7 @@ const db = getFirestore(app);
       if(!snap.exists()){ alert("Documento não encontrado."); return; }
       const dados = snap.data();
 
-      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"];
+      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","status","data de entrada"];
       campos.forEach(id => document.getElementById(id).value = dados[id] || (id==="sexo" ? "Masculino" : ""));
       statusAtual = dados.status || "Ativo";
       document.getElementById("statusSelecionado").textContent = statusAtual;
@@ -656,4 +675,5 @@ onAuthStateChanged(auth, user=>{
   }
 });
 </script>
+
 
