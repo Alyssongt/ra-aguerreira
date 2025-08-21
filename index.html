@@ -335,173 +335,213 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-/* ==================== Membros (Firestore) ==================== */
-let statusAtual = "Ativo";
-let editandoTr = null;
-let editandoDocId = null;
-let unsubscribeMembros = null;
-let grafico = null;
+/* ==================== UI helpers ==================== */
+    const authSection = document.getElementById("authSection");
+    const membroSection = document.getElementById("membroSection");
+    const loginForm = document.getElementById("loginForm");
+    const cadastroForm = document.getElementById("cadastroForm");
 
-// Botões de Status
-document.getElementById("btnAtivo").onclick = async () => {
-  statusAtual = "Ativo";
-  document.getElementById("statusSelecionado").textContent = "Ativo";
-  if(editandoDocId){
-    const docRef = doc(db,"membros",editandoDocId);
-    const snap = await getDoc(docRef);
-    if(snap.exists()){
+    function clearLoginErrors(){ document.getElementById("loginError").classList.add("hidden"); }
+    function clearCadastroErrors(){
+      const el = document.getElementById("cadastroError");
+      el.classList.add("hidden"); el.textContent = "";
+    }
+    function limparCamposLogin(){
+      document.getElementById("emailInput").value = "";
+      document.getElementById("passwordInput").value = "";
+    }
+    function limparCamposCadastro(){
+      document.getElementById("cadEmailInput").value = "";
+      document.getElementById("cadSenhaInput").value = "";
+      document.getElementById("cadConfirmaSenhaInput").value = "";
+    }
+
+    document.getElementById("showCadastro").onclick = () => {
+      loginForm.classList.add("hidden");
+      cadastroForm.classList.remove("hidden");
+      clearLoginErrors(); clearCadastroErrors(); limparCamposLogin();
+    };
+    document.getElementById("showLogin").onclick = () => {
+      cadastroForm.classList.add("hidden");
+      loginForm.classList.remove("hidden");
+      clearLoginErrors(); clearCadastroErrors(); limparCamposCadastro();
+    };
+
+    /* ==================== Auth ==================== */
+    document.getElementById("btnLogin").onclick = async () => {
+      const email = document.getElementById("emailInput").value.trim();
+      const senha = document.getElementById("passwordInput").value.trim();
+      try{
+        await signInWithEmailAndPassword(auth, email, senha);
+        clearLoginErrors();
+      }catch(e){
+        document.getElementById("loginError").classList.remove("hidden");
+      }
+    };
+
+    document.getElementById("btnCadastro").onclick = async () => {
+      const email = document.getElementById("cadEmailInput").value.trim();
+      const senha = document.getElementById("cadSenhaInput").value.trim();
+      const confirma = document.getElementById("cadConfirmaSenhaInput").value.trim();
+      const erroEl = document.getElementById("cadastroError");
+      erroEl.classList.add("hidden"); erroEl.textContent = "";
+
+      if(!email){ erroEl.textContent = "Informe o email."; erroEl.classList.remove("hidden"); return; }
+      if(!senha || senha.length < 6){ erroEl.textContent = "Senha mínima de 6 caracteres."; erroEl.classList.remove("hidden"); return; }
+      if(senha !== confirma){ erroEl.textContent = "As senhas não conferem."; erroEl.classList.remove("hidden"); return; }
+
+      try{
+        await createUserWithEmailAndPassword(auth, email, senha);
+        alert("Cadastro feito! Faça login.");
+        cadastroForm.classList.add("hidden");
+        loginForm.classList.remove("hidden");
+        limparCamposCadastro();
+      }catch(error){
+        if(error.code === "auth/email-already-in-use") erroEl.textContent = "Email já cadastrado.";
+        else if(error.code === "auth/invalid-email") erroEl.textContent = "Email inválido.";
+        else if(error.code === "auth/weak-password") erroEl.textContent = "Senha fraca.";
+        else erroEl.textContent = "Erro ao cadastrar: " + error.message;
+        erroEl.classList.remove("hidden");
+      }
+    };
+
+    document.getElementById("btnSair").onclick = async () => {
+      await signOut(auth);
+      document.getElementById("tabelaMembrosCorpo").innerHTML = "";
+      limparCamposLogin(); limparCamposCadastro(); clearLoginErrors(); clearCadastroErrors();
+    };
+
+    onAuthStateChanged(auth, (user) => {
+      if(user){
+        authSection.classList.add("hidden");
+        membroSection.classList.remove("hidden");
+        iniciarListenerMembros(); // realtime
+      }else{
+        authSection.classList.remove("hidden");
+        membroSection.classList.add("hidden");
+        if(unsubscribeMembros) unsubscribeMembros();
+      }
+    });
+
+    /* ==================== Membros (Firestore) ==================== */
+    let statusAtual = "Ativo";
+    let editandoTr = null;
+    let editandoDocId = null;
+
+    document.getElementById("btnAtivo").onclick = () => { statusAtual="Ativo"; document.getElementById("statusSelecionado").textContent="Ativo"; };
+    document.getElementById("btnDesativado").onclick = () => { statusAtual="Desativado"; document.getElementById("statusSelecionado").textContent="Desativado"; };
+
+    function limparCampos(){
+      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"];
+      campos.forEach(id => {
+        if(id==="sexo") document.getElementById(id).selectedIndex = 0;
+        else document.getElementById(id).value = "";
+      });
+      statusAtual="Ativo";
+      document.getElementById("statusSelecionado").textContent = "Ativo";
+      editandoTr = null; editandoDocId = null;
+      document.getElementById("btnCadastrar").textContent = "Cadastrar Membro";
+    }
+
+    // Cadastrar / Editar
+    document.getElementById("btnCadastrar").onclick = async () => {
+      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"];
+      const dados = {};
+      campos.forEach(id => dados[id] = document.getElementById(id).value || "");
+      dados.status = statusAtual;
+
+      if(!dados.nome.trim()){ alert("Informe o NOME."); return; }
+
+      try{
+        if(editandoDocId){
+          await setDoc(doc(db,"membros", editandoDocId), dados, { merge: true });
+          alert("Membro atualizado!");
+        }else{
+          await addDoc(collection(db,"membros"), dados);
+          alert("Membro cadastrado!");
+        }
+        limparCampos();
+      }catch(e){
+        alert("Erro ao salvar: " + e.message);
+      }
+    };
+
+    // Monta linha na tabela
+    function adicionarLinhaTabela(docId, dados){
+      const tr = document.createElement("tr");
+      tr.dataset.docId = docId;
+
+      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data","status"];
+      campos.forEach(campo => {
+        const td = document.createElement("td");
+        td.className = "border px-2 py-1 text-center";
+        if(campo==="data" && dados[campo]) {
+          try{
+            td.textContent = new Date(dados[campo]).toLocaleDateString("pt-BR");
+          }catch{ td.textContent = dados[campo]; }
+        } else {
+          td.textContent = dados[campo] ?? "";
+        }
+        tr.appendChild(td);
+      });
+
+      // Ações
+      const tdAcoes = document.createElement("td");
+      tdAcoes.className = "border px-2 py-1 text-center";
+      const wrap = document.createElement("div");
+      wrap.className = "flex justify-center gap-2";
+
+      const btnEditar = document.createElement("button");
+      btnEditar.textContent = "Editar";
+      btnEditar.className = "bg-yellow-400 hover:bg-yellow-500 px-2 rounded text-black";
+      btnEditar.onclick = () => editarMembro(docId, tr);
+
+      const btnExcluir = document.createElement("button");
+      btnExcluir.textContent = "Excluir";
+      btnExcluir.className = "bg-red-600 hover:bg-red-700 px-2 rounded text-white";
+      btnExcluir.onclick = () => excluirMembro(docId);
+
+      wrap.appendChild(btnEditar); wrap.appendChild(btnExcluir);
+      tdAcoes.appendChild(wrap);
+      tr.appendChild(tdAcoes);
+
+      document.getElementById("tabelaMembrosCorpo").appendChild(tr);
+    }
+
+    async function editarMembro(docId, tr){
+      const snap = await getDoc(doc(db,"membros", docId));
+      if(!snap.exists()){ alert("Documento não encontrado."); return; }
       const dados = snap.data();
-      const historico = Array.isArray(dados.historico)?dados.historico:[];
-      const ultimo = historico[historico.length-1];
-      if(!ultimo || ultimo.status !== "Ativo"){
-        historico.push({status:"Voltou a treinar", data:new Date().toISOString()});
-        await setDoc(docRef,{historico},{merge:true});
+
+      const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"];
+      campos.forEach(id => document.getElementById(id).value = dados[id] || (id==="sexo" ? "Masculino" : ""));
+      statusAtual = dados.status || "Ativo";
+      document.getElementById("statusSelecionado").textContent = statusAtual;
+
+      editandoTr = tr; editandoDocId = docId;
+      document.getElementById("btnCadastrar").textContent = "Salvar Alterações";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function excluirMembro(docId){
+      if(!confirm("Excluir este membro?")) return;
+      try{
+        await deleteDoc(doc(db,"membros", docId));
+        alert("Excluído com sucesso!");
+      }catch(e){
+        alert("Erro ao excluir: " + e.message);
       }
     }
-  }
-};
 
-document.getElementById("btnDesativado").onclick = async () => {
-  statusAtual = "Desativado";
-  document.getElementById("statusSelecionado").textContent = "Desativado";
-  if(editandoDocId){
-    const docRef = doc(db,"membros",editandoDocId);
-    const snap = await getDoc(docRef);
-    if(snap.exists()){
-      const dados = snap.data();
-      const historico = Array.isArray(dados.historico)?dados.historico:[];
-      const ultimo = historico[historico.length-1];
-      if(!ultimo || ultimo.status !== "Desativado"){
-        const agora = new Date().toISOString();
-        historico.push({status:"Desativado", data:agora});
-        await setDoc(docRef,{historico, ultimaSaida:agora},{merge:true}); // <<< ADICIONADO
-  }
-    }
-  }
-};
-
-// Limpar Campos
-function limparCampos(){
-  const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"];
-  campos.forEach(id=>{
-    if(id==="sexo") document.getElementById(id).selectedIndex = 0;
-    else document.getElementById(id).value="";
-  });
-  statusAtual = "Ativo";
-  document.getElementById("statusSelecionado").textContent = "Ativo";
-  editandoTr = null;
-  editandoDocId = null;
-  document.getElementById("btnCadastrar").textContent = "Cadastrar Membro";
-}
-
-// Botão Cadastrar
-document.getElementById("btnCadastrar").onclick = async () => {
-  const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data","nascimento"];
-  const dados = {};
-  campos.forEach(id => dados[id] = document.getElementById(id).value || "");
-  dados.status = statusAtual;
-
-  if(!dados.nome.trim()){ alert("Informe o NOME."); return; }
-
-  try{
-    if(editandoDocId){
-      const docRef = doc(db,"membros",editandoDocId);
-      const snap = await getDoc(docRef);
-      const historico = Array.isArray(snap.data().historico)?snap.data().historico:[];
-      await setDoc(docRef,{...dados,historico},{merge:true});
-      alert("Membro atualizado!");
-    } else {
-      dados.dataCadastro = new Date().toISOString(); // <<< ADICIONADO
-      dados.historico = [{status:"Ativo", data:new Date().toISOString()}];
-      await addDoc(collection(db,"membros"),dados);
-      alert("Membro cadastrado!");
-  }
-    limparCampos();
-  } catch(e){ alert("Erro ao salvar: "+e.message); }
-};
-
-// Adicionar Linha na Tabela
-function adicionarLinhaTabela(docId,dados){
-  const tr = document.createElement("tr");
-  tr.dataset.docId = docId;
-  const campos = ["nome","apelido","nascimento","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","status","dataCadastro","ultimaSaida"];
-  campos.forEach(campo=>{
-    const td = document.createElement("td");
-    td.className = "border px-2 py-1 text-center";
-   if((campo==="dataCadastro" || campo==="ultimaSaida" || campo==="nascimento" || campo==="data") && dados[campo]){
-      try{ td.textContent = new Date(dados[campo]).toLocaleDateString("pt-BR"); }
-      catch{ td.textContent = dados[campo]; }
-    } else {
-      td.textContent = dados[campo] ?? "";
-    }
-    tr.appendChild(td);
-  });
-  const tdAcoes = document.createElement("td");
-  tdAcoes.className = "border px-2 py-1 text-center";
-  const wrap = document.createElement("div");
-  wrap.className = "flex justify-center gap-2";
-
-  const btnEditar = document.createElement("button");
-  btnEditar.textContent = "Editar";
-  btnEditar.className = "bg-yellow-400 hover:bg-yellow-500 px-2 rounded text-black";
-  btnEditar.onclick = () => editarMembro(docId,tr);
-
-  const btnExcluir = document.createElement("button");
-  btnExcluir.textContent = "Excluir";
-  btnExcluir.className = "bg-red-600 hover:bg-red-700 px-2 rounded text-white";
-  btnExcluir.onclick = () => excluirMembro(docId);
-
-  wrap.appendChild(btnEditar);
-  wrap.appendChild(btnExcluir);
-  tdAcoes.appendChild(wrap);
-  tr.appendChild(tdAcoes);
-  document.getElementById("tabelaMembrosCorpo").appendChild(tr);
-}
-
-// Editar Membro
-async function editarMembro(docId,tr){
-  const snap = await getDoc(doc(db,"membros",docId));
-  if(!snap.exists()){ alert("Documento não encontrado."); return; }
-  const dados = snap.data();
-  const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"];
-  campos.forEach(id => document.getElementById(id).value = dados[id] || "");
-  statusAtual = dados.status || "Ativo";
-  document.getElementById("statusSelecionado").textContent = statusAtual;
-  editandoTr = tr;
-  editandoDocId = docId;
-  document.getElementById("btnCadastrar").textContent = "Salvar Alterações";
-  window.scrollTo({top:0,behavior:"smooth"});
-}
-
-// Excluir Membro
-async function excluirMembro(docId){
-  if(!confirm("Excluir este membro?")) return;
-  try{ await deleteDoc(doc(db,"membros",docId)); alert("Excluído com sucesso!"); }catch(e){ alert("Erro ao excluir: "+e.message); }
-}
-
-// Exportar CSV
-document.getElementById("btnExportar").onclick = () => {
-  const linhas = document.querySelectorAll("#tabelaMembrosCorpo tr");
-  if(linhas.length === 0){ alert("Nenhum membro para exportar."); return; }
-   const header = ["Nome","Apelido","Nascimento","Idade","Sexo","Cidade","Corda","Tempo","Frequência","Telefone","Responsável","Autorização","Status","Data Cadastro","Última Saída"]; // <<< ADICIONADO
-  const csv = [header.join(",")];
-  linhas.forEach(l => {
-    const tds = l.querySelectorAll("td");
-    const vals = [];
-    for(let i=0;i<tds.length-1;i++){
-      let txt = tds[i].textContent;
-      if(txt.includes(",")) txt = `"${txt}"`;
-      vals.push(txt);
-    }
-    csv.push(vals.join(","));
-  });
-  const blob = new Blob([csv.join("\n")],{type:"text/csv;charset=utf-8;"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = "membros.csv"; a.click();
-  URL.revokeObjectURL(url);
-};
-
+    // Pesquisa (cliente)
+    document.getElementById("searchInput").addEventListener("input", () => {
+      const filtro = document.getElementById("searchInput").value.toLowerCase();
+      const linhas = document.querySelectorAll("#tabelaMembrosCorpo tr");
+      linhas.forEach(linha => {
+        const texto = linha.innerText.toLowerCase();
+        linha.style.display = texto.includes(filtro) ? "" : "none";
+      });
+    });
 // === Gráfico e Contadores ===
 function agruparPorMes(membros){
   const ganhos={}; const perdas={};
@@ -616,3 +656,4 @@ onAuthStateChanged(auth, user=>{
   }
 });
 </script>
+
