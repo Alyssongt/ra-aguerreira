@@ -331,29 +331,52 @@ const firebaseConfig = {
   measurementId: "G-WQ9JGE53XP"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
 
-async function carregarMembros() {
-  const membrosCol = collection(db, "membros"); // nome da coleção
-  const snapshot = await getDocs(membrosCol);
-  const tabela = document.getElementById("tabelaMembros"); // sua tabela HTML
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const membrosCol = collection(db, "membros");
 
-  // Limpar tabela antes de preencher
-  tabela.innerHTML = "";
+    const formCadastro = document.getElementById("formCadastro");
+    const tabelaMembros = document.getElementById("tabelaMembros").querySelector("tbody");
+    const ativosBox = document.getElementById("ativosBox");
+    const desativadosBox = document.getElementById("desativadosBox");
 
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    const row = tabela.insertRow();
-    row.insertCell(0).innerText = data.nome;
-    row.insertCell(1).innerText = data.idade;
-    row.insertCell(2).innerText = data.sexo;
-    // adicione mais campos conforme necessário
-  });
-}
+    // Cadastrar novo membro
+    formCadastro.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const nome = document.getElementById("nome").value;
+      const idade = document.getElementById("idade").value;
+      const sexo = document.getElementById("sexo").value;
+      const status = document.getElementById("status").value;
 
-window.onload = carregarMembros;
+      if (!nome || !idade || !sexo) return alert("Preencha todos os campos!");
 
+      await addDoc(membrosCol, { nome, idade, sexo, status, criadoEm: new Date() });
+
+      formCadastro.reset();
+    });
+
+    // Atualizar tabela e contadores em tempo real
+    onSnapshot(membrosCol, (snapshot) => {
+      tabelaMembros.innerHTML = "";
+      let ativos = 0, desativados = 0;
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const row = tabelaMembros.insertRow();
+        row.insertCell(0).innerText = data.nome;
+        row.insertCell(1).innerText = data.idade;
+        row.insertCell(2).innerText = data.sexo;
+        row.insertCell(3).innerText = data.status;
+
+        if (data.status === "Ativo") ativos++;
+        else desativados++;
+      });
+
+      ativosBox.innerText = `Ativos: ${ativos}`;
+      desativadosBox.innerText = `Desativados: ${desativados}`;
+    });
+ 
 /* ==================== UI helpers ==================== */
     const authSection = document.getElementById("authSection");
     const membroSection = document.getElementById("membroSection");
@@ -675,5 +698,6 @@ onAuthStateChanged(auth, user=>{
   }
 });
 </script>
+
 
 
