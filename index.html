@@ -4,56 +4,372 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Controle de Membros</title>
-  <link rel="manifest" href="manifest.json" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-
   <style>
-    .video-top {
-      position: relative;
-      width: 100%;
-      height: 180px;
-      overflow: hidden;
-      z-index: 10;
+    /* Estilo das faíscas */
+    .spark {
+      position: absolute;
+      color: #001aff; /* amarelo */
+      font-size: 14px;
+      animation: blink 0.8s linear infinite;
+      pointer-events: none;
     }
-    .video-top video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
+
+    @keyframes blink {
+      0%, 100% { opacity: 0; transform: scale(0.5); }
+      50% { opacity: 1; transform: scale(1.2); }
     }
-    .cursor-pointer {
-      cursor: pointer;
-    }
- #membroSection.hidden {
-      display: none !important;
- }
   </style>
 </head>
-<body class="bg-gray-100"></body>
+<body class="bg-gray-100">
+  <div class="max-w-7xl mx-auto px-4 py-6">
 
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-      .then(() => console.log('Service Worker registrado!'))
-      .catch(err => console.error('Erro ao registrar SW:', err));
+    <!-- TÍTULO COM FAÍSCAS -->
+  <div class="flex justify-center items-center mb-6">
+  <h1 id="titulo" class="text-4xl font-bold text-blue-500 relative"></h1>
+  <span id="sparks" class="absolute"></span>
+</div>
+
+<div class="flex justify-center items-center mb-6 space-x-3 relative">
+  <!-- Logo do grupo -->
+  <img src="logo.png" alt="Logo Raça Guerreira" class="w-16 h-16 object-contain"/>
+
+  <!-- Título -->
+  <h1 id="titulo" class="text-4xl font-bold text-blue-500 relative flex"></h1>
+  <span id="sparks" class="absolute"></span>
+</div>
+
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, collection, addDoc, doc, getDoc, setDoc, deleteDoc, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAzj_PW0iboc8IJPfeuI5TP5ugia-Wbzw4",
+    authDomain: "racaguerreira-e7224.firebaseapp.com",
+    projectId: "racaguerreira-e7224",
+    storageBucket: "racaguerreira-e7224.appspot.com",
+    messagingSenderId: "194977970184",
+    appId: "1:194977970184:web:e5ffc3232d720ea710f9bd",
+    measurementId: "G-WQ9JGE53XP"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Variáveis globais
+  let statusAtual = "Ativo";
+  let editandoDocId = null;
+  let unsubscribeMembros = null;
+  let grafico = null;
+
+  // ───────── LOGIN / CADASTRO ─────────
+  const loginForm = document.getElementById("loginForm");
+  const cadastroForm = document.getElementById("cadastroForm");
+  document.getElementById("showCadastro").onclick = () => {
+    loginForm.classList.add("hidden");
+    cadastroForm.classList.remove("hidden");
+  };
+  document.getElementById("showLogin").onclick = () => {
+    cadastroForm.classList.add("hidden");
+    loginForm.classList.remove("hidden");
+  };
+
+  document.getElementById("btnLogin").onclick = async () => {
+    const email = document.getElementById("emailInput").value;
+    const senha = document.getElementById("passwordInput").value;
+    try {
+      await signInWithEmailAndPassword(auth, email, senha);
+      document.getElementById("loginError").classList.add("hidden");
+    } catch {
+      document.getElementById("loginError").classList.remove("hidden");
+    }
+  };
+
+  document.getElementById("btnCadastro").onclick = async () => {
+    const email = document.getElementById("cadEmailInput").value;
+    const senha = document.getElementById("cadSenhaInput").value;
+    const confirma = document.getElementById("cadConfirmaSenhaInput").value;
+
+    if (senha !== confirma) { alert("Senhas não conferem"); return; }
+
+    try {
+      await createUserWithEmailAndPassword(auth, email, senha);
+      alert("Cadastro realizado!");
+      cadastroForm.classList.add("hidden");
+      loginForm.classList.remove("hidden");
+    } catch (e) {
+      alert("Erro: " + e.message);
+    }
+  };
+
+  // ───────── FUNÇÃO SAIR ─────────
+  document.getElementById("btnSair").onclick = () => signOut(auth);
+
+  // ───────── FUNÇÕES MÚLTIPLAS DE MEMBROS ─────────
+  function limparCampos() {
+    const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data","nascimento"];
+    campos.forEach(id => {
+      if(id==="sexo") document.getElementById(id).selectedIndex = 0;
+      else document.getElementById(id).value="";
+    });
+    statusAtual="Ativo";
+    document.getElementById("statusSelecionado").textContent="Ativo";
+    editandoDocId=null;
+    document.getElementById("btnCadastrar").textContent="Cadastrar Membro";
   }
+
+  document.getElementById("btnAtivo").onclick = () => { statusAtual="Ativo"; document.getElementById("statusSelecionado").textContent="Ativo"; };
+  document.getElementById("btnDesativado").onclick = () => { statusAtual="Desativado"; document.getElementById("statusSelecionado").textContent="Desativado"; };
+
+      // ───────── EFEITO DE DIGITAÇÃO + FAÍSCAS ─────────
+    const titulo = document.getElementById("titulo");
+    const texto = " MEMBROS RAÇA GUERREIRA";
+    let i = 0;
+
+    function digitar() {
+      if (i < texto.length) {
+        titulo.textContent += texto.charAt(i);
+        i++;
+        setTimeout(digitar, 150);
+      } else {
+        criarFaiscas();
+      }
+    }
+    digitar();
+
+    function criarFaiscas() {
+      setInterval(() => {
+        const spark = document.createElement("span");
+        spark.className = "spark";
+        spark.textContent = "✦";
+
+        // posição aleatória ao redor do texto
+        const x = Math.random() * 200 - 100;
+        const y = Math.random() * 40 - 20;
+        spark.style.left = `${titulo.offsetLeft + titulo.offsetWidth/2 + x}px`;
+        spark.style.top = `${titulo.offsetTop + y}px`;
+
+        document.body.appendChild(spark);
+
+        setTimeout(() => spark.remove(), 1000);
+      }, 300);
+    }
+
+  // ───────── CALCULAR IDADE AUTOMATICAMENTE ─────────
+  document.getElementById("nascimento").addEventListener("change", () => {
+    const nasc = document.getElementById("nascimento").value;
+    if (!nasc) return;
+
+    const hoje = new Date();
+    const dataNasc = new Date(nasc);
+    let idade = hoje.getFullYear() - dataNasc.getFullYear();
+    const mes = hoje.getMonth() - dataNasc.getMonth();
+    if (mes < 0 || (mes === 0 && hoje.getDate() < dataNasc.getDate())) {
+      idade--;
+    }
+    document.getElementById("idade").value = idade;
+  });
+
+  // ───────── CADASTRO / EDIÇÃO ─────────
+  document.getElementById("btnCadastrar").onclick = async () => {
+    const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data","nascimento"];
+    const dados = {};
+    campos.forEach(id => dados[id] = document.getElementById(id).value || "");
+    dados.status = statusAtual;
+
+    if (!dados.nome.trim()) { alert("Informe o nome."); return; }
+
+    try {
+      if (!editandoDocId) {
+        dados.dataEntrada = new Date().toISOString();
+        dados.dataSaida = "";
+        dados.historico = [{ status: "Ativo", data: dados.dataEntrada }];
+        await addDoc(collection(db, "membros"), dados);
+        alert("Membro cadastrado!");
+      } else {
+        const docRef = doc(db, "membros", editandoDocId);
+        const snap = await getDoc(docRef);
+        const antigo = snap.data();
+
+        dados.dataEntrada = antigo.dataEntrada || new Date().toISOString();
+        if (antigo.status === "Ativo" && statusAtual === "Desativado") {
+          dados.dataSaida = new Date().toISOString();
+        } else {
+          dados.dataSaida = antigo.dataSaida || "";
+        }
+
+        dados.historico = Array.isArray(antigo.historico) ? antigo.historico : [];
+        dados.historico.push({ status: statusAtual, data: new Date().toISOString() });
+
+        await setDoc(docRef, dados, { merge: true });
+        alert("Membro atualizado!");
+      }
+      limparCampos();
+    } catch (e) { alert("Erro ao salvar: " + e.message); }
+  };
+
+  // ───────── TABELA / LISTAGEM ─────────
+  function adicionarLinhaTabela(docId, dados) {
+    const tr = document.createElement("tr");
+    tr.dataset.docId = docId;
+
+    const campos = ["nome","apelido","nascimento","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","status"];
+    campos.forEach(c => {
+      const td = document.createElement("td");
+      td.className="border px-2 py-1 text-center";
+
+      if (c === "nascimento" && dados[c]) {
+        const data = new Date(dados[c]);
+        td.textContent = data.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+      } else {
+        td.textContent = dados[c] || "";
+      }
+
+      tr.appendChild(td);
+    });
+
+    const tdDatas = document.createElement("td");
+    tdDatas.className="border px-2 py-1 text-center";
+    tdDatas.innerHTML = `Entrada: ${dados.dataEntrada ? new Date(dados.dataEntrada).toLocaleDateString("pt-BR") : "-"}<br>Saída: ${dados.dataSaida ? new Date(dados.dataSaida).toLocaleDateString("pt-BR") : "-"}`;
+    tr.appendChild(tdDatas);
+
+    const tdAcoes = document.createElement("td");
+    tdAcoes.className="border px-2 py-1 text-center";
+    const wrap = document.createElement("div"); wrap.className="flex justify-center gap-2";
+
+    const btnEditar = document.createElement("button");
+    btnEditar.textContent="Editar"; btnEditar.className="bg-yellow-400 hover:bg-yellow-500 px-2 rounded text-black";
+    btnEditar.onclick = () => editarMembro(docId, tr);
+
+    const btnExcluir = document.createElement("button");
+    btnExcluir.textContent="Excluir"; btnExcluir.className="bg-red-600 hover:bg-red-700 px-2 rounded text-white";
+    btnExcluir.onclick = () => excluirMembro(docId);
+
+    wrap.appendChild(btnEditar); wrap.appendChild(btnExcluir);
+    tdAcoes.appendChild(wrap);
+    tr.appendChild(tdAcoes);
+
+    document.getElementById("tabelaMembrosCorpo").appendChild(tr);
+  }
+
+  async function editarMembro(docId, tr) {
+    const snap = await getDoc(doc(db, "membros", docId));
+    if(!snap.exists()){ alert("Documento não encontrado"); return; }
+    const dados = snap.data();
+    const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data","nascimento"];
+    campos.forEach(id => document.getElementById(id).value = dados[id] || "");
+    statusAtual = dados.status || "Ativo";
+    document.getElementById("statusSelecionado").textContent = statusAtual;
+    editandoDocId = docId;
+    document.getElementById("btnCadastrar").textContent = "Salvar Alterações";
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+
+  async function excluirMembro(docId) {
+    if(!confirm("Excluir este membro?")) return;
+    await deleteDoc(doc(db, "membros", docId));
+    alert("Membro excluído!");
+  }
+  // Exportar CSV
+  document.getElementById("btnExportar").onclick = () => {
+    const linhas = document.querySelectorAll("#tabelaMembrosCorpo tr");
+    if(linhas.length === 0){ alert("Nenhum membro para exportar."); return; }
+    const header = ["Nome","Apelido","Idade","Sexo","Cidade","Corda","Tempo","Frequência","Telefone","Responsável","Autorização","Status","Data Entrada/Saída"];
+    const csv = [header.join(",")];
+    linhas.forEach(l => {
+      const tds = l.querySelectorAll("td");
+      const vals = [];
+      for(let i=0;i<tds.length;i++) vals.push(`"${tds[i].textContent.replace(/"/g,'""')}"`);
+      csv.push(vals.join(","));
+    });
+    const blob = new Blob([csv.join("\n")], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download="membros.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ───────── GRÁFICO ─────────
+  function gerarGrafico(membros) {
+    const ganhos = {};
+    const perdas = {};
+    membros.forEach(d => {
+      if(d.status === "Ativo" && d.dataEntrada){
+        const dt = new Date(d.dataEntrada);
+        const mesAno = dt.toLocaleString("pt-BR",{month:"short",year:"numeric"});
+        ganhos[mesAno]=(ganhos[mesAno]||0)+1;
+      }
+      if(d.status === "Desativado" && d.dataSaida){
+        const dt = new Date(d.dataSaida);
+        const mesAno = dt.toLocaleString("pt-BR",{month:"short",year:"numeric"});
+        perdas[mesAno]=(perdas[mesAno]||0)+1;
+      }
+    });
+
+    const meses = [...new Set([...Object.keys(ganhos),...Object.keys(perdas)])].sort((a,b)=>new Date("01 "+a)-new Date("01 "+b));
+    const ctx = document.getElementById("graficoMembros").getContext("2d");
+    if(grafico) grafico.destroy();
+    grafico = new Chart(ctx,{
+      type:"bar",
+      data:{
+        labels:meses,
+        datasets:[
+          {label:"Entraram", data:meses.map(m => ganhos[m]||0), backgroundColor:"rgba(34,197,94,0.7)", borderColor:"rgba(34,197,94,1)", borderWidth:1},
+          {label:"Saíram", data:meses.map(m => perdas[m]||0), backgroundColor:"rgba(239,68,68,0.7)", borderColor:"rgba(239,68,68,1)", borderWidth:1}
+        ]
+      },
+      options:{
+        responsive:true,
+        plugins:{legend:{position:"top"},title:{display:true,text:"Entradas e Saídas Mensais",font:{size:18,weight:"bold"}}},
+        scales:{x:{title:{display:true,text:"Mês"}},y:{beginAtZero:true,title:{display:true,text:"Quantidade"}}}
+      }
+    });
+  }
+
+  // ───────── LISTENER FIRESTORE ─────────
+  function iniciarListenerMembros(){
+    const corpo = document.getElementById("tabelaMembrosCorpo");
+    if(unsubscribeMembros) unsubscribeMembros();
+    const q = query(collection(db,"membros"), orderBy("nome"));
+    unsubscribeMembros = onSnapshot(q, snap => {
+      corpo.innerHTML = "";
+      const membrosArray = [];
+      snap.forEach(docu => {
+        const dados = docu.data();
+        membrosArray.push(dados);
+        adicionarLinhaTabela(docu.id,dados);
+      });
+      gerarGrafico(membrosArray);
+    });
+  }
+
+  // ───────── AUTENTICAÇÃO ─────────
+  onAuthStateChanged(auth, user => {
+    const membroSection = document.getElementById("membroSection");
+    const authSection = document.getElementById("authSection");
+    if(user){
+      authSection.classList.add("hidden");
+      membroSection.classList.remove("hidden");
+      iniciarListenerMembros();
+    } else {
+      authSection.classList.remove("hidden");
+      membroSection.classList.add("hidden");
+      if(unsubscribeMembros) unsubscribeMembros();
+    }
+  });
 </script>
-
-<body class="bg-gray-200">
-
-
-
-<!-- LOGIN & CADASTRO -->
+</head>
+<body class="bg-gray-100">
+  <!-- LOGIN e CADASTRO -->
   <div id="authSection" class="flex min-h-screen items-center justify-center p-4">
     <div class="bg-white p-6 rounded shadow-md w-full max-w-sm">
-      
-      <!-- Login -->
+
       <div id="loginForm">
         <h2 class="text-2xl font-bold mb-4 text-center">Login</h2>
         <input id="emailInput" type="email" placeholder="Email" class="w-full mb-3 px-4 py-2 border rounded" />
@@ -63,7 +379,6 @@
         <p class="text-center mt-4 text-sm">Não tem conta? <span id="showCadastro" class="text-blue-600 cursor-pointer hover:underline">Cadastre-se aqui</span></p>
       </div>
 
-      <!-- Cadastro -->
       <div id="cadastroForm" class="hidden">
         <h2 class="text-2xl font-bold mb-4 text-center">Cadastro</h2>
         <input id="cadEmailInput" type="email" placeholder="Email" class="w-full mb-3 px-4 py-2 border rounded" />
@@ -77,216 +392,72 @@
     </div>
   </div>
 
-  <!-- SEÇÃO MEMBROS (escondida até login) -->
-  <section id="membroSection" class="hidden">
+  <!-- SEÇÃO MEMBROS -->
+  <section id="membroSection" class="hidden p-4">
 
-    <!-- Cabeçalho -->
-    <!-- TÍTULO COM FAÍSCAS -->
-    <div class="flex items-center gap-3 mb-0">
-      <img src="logo.png" class="w-12 h-12 opacity-90" alt="Logo">
-      <div id="tituloContainer">
-        <h1 id="titulo" class="text-white font-extrabold text-5xl drop-shadow-lg"></h1>
-      </div>
+    <div class="flex justify-between items-center mb-4">
+      <h1 class="text-3xl font-bold"></h1>
+      <button id="btnSair" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Sair</button>
     </div>
 
-
-    
-<style>
-  #tituloContainer {
-  position: relative;
-  display: inline-block;
-}
-
-
-#titulo {
-  text-shadow: 0 0 10px #00f6ff, 0 0 20px #00f6ff, 0 0 30px #0088ff;
-  white-space: nowrap;
-  overflow: hidden;
-  border-right: 0px solid #00f6ff;
-  animation: blink 0.7s infinite;
-  margin-bottom: -5;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-
-@keyframes blink {
-  50% { border-color: transparent; }
-}
-
-.spark {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  background: #00f6ff;
-  border-radius: 50%;
-  opacity: 0.9;
-  filter: blur(1px);
-  pointer-events: none;
-  animation: sparkMove 0.7s forwards;
-}
-
-@keyframes sparkMove {
-  0%   { transform: translate(0,0) scale(1); opacity: 1; }
-  100% { transform: translate(var(--x), var(--y)) scale(0); opacity: 0; }
-}
-</style>
-
-<script>
-function typeWriterWithSparks(container, element, text, speed = 100) {
-  element.textContent = "";
-  let i = 0;
-
-  function type() {
-    if (i < text.length) {
-      element.textContent += text.charAt(i);
-
-      // Criar faíscas
-      for (let j = 0; j < 3; j++) {
-        const spark = document.createElement("span");
-        spark.className = "spark";
-        spark.style.left = `${Math.random() * element.offsetWidth}px`;
-        spark.style.top = `${Math.random() * element.offsetHeight}px`;
-        spark.style.setProperty("--x", `${Math.random() * 80 - 40}px`);
-        spark.style.setProperty("--y", `${-Math.random() * 80 - 20}px`);
-        container.appendChild(spark);
-        setTimeout(() => spark.remove(), 700);
-      }
-
-      i++;
-      setTimeout(type, speed);
-    }
-  }
-  type();
-}
-
-// TESTE → roda quando a página abrir
-window.onload = () => {
-  const titulo = document.getElementById("titulo");
-  const container = document.getElementById("tituloContainer");
-  typeWriterWithSparks(container, titulo, "MEMBROS RAÇA GUERREIRA", 100);
-};
-</script>
-
-
-
-    <!-- Botão Sair -->
-    <div class="flex justify-end max-w-7xl mx-auto px-4 py-4">
-      <button id="btnSair" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">Sair</button>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 bg-white p-4 rounded shadow">
+      <input id="nome" placeholder="Nome" class="p-2 border rounded"/>
+      <input id="apelido" placeholder="Apelido" class="p-2 border rounded"/>
+      <input id="nascimento" type="date" placeholder="Data de nascimento" class="p-2 border rounded"/>
+      <input id="idade" placeholder="Idade" class="p-2 border rounded" readonly/>
+      <select id="sexo" class="p-2 border rounded"><option>Masculino</option><option>Feminino</option><option>Outro</option></select>
+      <input id="cidade" placeholder="Cidade/Bairro" class="p-2 border rounded"/>
+      <input id="corda" placeholder="Corda" class="p-2 border rounded"/>
+      <input id="tempo" placeholder="Tempo de treino" class="p-2 border rounded"/>
+      <input id="frequencia" placeholder="Frequência" class="p-2 border rounded"/>
+      <input id="telefone" placeholder="Telefone" class="p-2 border rounded"/>
+      <input id="responsavel" placeholder="Responsável" class="p-2 border rounded"/>
+      <input id="autorizacao" placeholder="Autorização" class="p-2 border rounded"/>
+      <input id="data" type="date" class="p-2 border rounded"/>
     </div>
 
-    <!-- Pesquisa -->
-    <div class="max-w-7xl mx-auto px-4 mb-4">
-      <input type="text" id="searchInput" placeholder="Pesquisar por nome, apelido, idade, sexo, cidade, frequência..." class="w-full p-2 border rounded shadow-sm" />
+    <div class="flex flex-wrap items-center gap-3 mb-4">
+      <span class="font-semibold">Status:</span>
+      <button id="btnAtivo" class="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">Ativo</button>
+      <button id="btnDesativado" class="bg-red-700 text-white px-3 py-1 rounded hover:bg-red-800">Desativado</button>
+      <span id="statusSelecionado" class="ml-2 font-bold text-blue-700">Ativo</span>
     </div>
 
-  
+    <div class="flex gap-4 mb-4">
+      <button id="btnCadastrar" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Cadastrar Membro</button>
+      <button id="btnExportar" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">Exportar CSV</button>
+    </div>
 
-<script>
-/* ==================== Cálculo automático da idade ==================== */
-document.getElementById("data").addEventListener("change", function() {
-  const nascimento = new Date(this.value);
-  const hoje = new Date();
+    <div class="overflow-x-auto mb-4">
+      <table id="tabelaMembros" class="min-w-full border border-black text-sm sm:text-base bg-white">
+        <thead>
+          <tr>
+            <th class="border px-2 py-1">Nome</th>
+            <th class="border px-2 py-1">Apelido</th>
+            <th class="border px-2 py-1">Nascimento</th>
+            <th class="border px-2 py-1">Idade</th>
+            <th class="border px-2 py-1">Sexo</th>
+            <th class="border px-2 py-1">Cidade</th>
+            <th class="border px-2 py-1">Corda</th>
+            <th class="border px-2 py-1">Tempo</th>
+            <th class="border px-2 py-1">Frequência</th>
+            <th class="border px-2 py-1">Telefone</th>
+            <th class="border px-2 py-1">Responsável</th>
+            <th class="border px-2 py-1">Autorização</th>
+            <th class="border px-2 py-1">Status</th>
+            <th class="border px-2 py-1">Datas</th>
+            <th class="border px-2 py-1">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tabelaMembrosCorpo"></tbody>
+      </table>
+    </div>
 
-  if (!isNaN(nascimento)) {
-    let idade = hoje.getFullYear() - nascimento.getFullYear();
-    const m = hoje.getMonth() - nascimento.getMonth();
-    if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) {
-      idade--;
-    }
-    document.getElementById("idade").value = idade;
-  } else {
-    document.getElementById("idade").value = "";
-  }
-});
-</script>
-
-
-    <!-- Formulário de membros -->
-    <div class="max-w-7xl mx-auto px-4 bg-white p-4 rounded shadow grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-  <input id="nome" placeholder="Nome" class="p-2 border rounded"/>
-  <input id="apelido" placeholder="Apelido" class="p-2 border rounded"/>
-
-  <!-- Data de nascimento e Idade -->
-  <div>
-    <label for="nascimento" class="block text-sm font-medium text-gray-700">Data de Nascimento</label>
-    <input id="nascimento" type="date" class="p-2 border rounded w-full"/>
-  </div>
-
-  <div>
-    <label for="idade" class="block text-sm font-medium text-gray-700">Idade</label>
-    <input id="idade" placeholder="Idade" class="p-2 border rounded w-full" readonly/>
-  </div>
-
-  <div>
-    <label for="sexo" class="block text-sm font-medium text-gray-700">Sexo</label>
-    <select id="sexo" class="p-2 border rounded w-full">
-      <option>Masculino</option>
-      <option>Feminino</option>
-      <option>Outro</option>
-    </select>
-  </div>
-
-  <input id="cidade" placeholder="Cidade/Bairro" class="p-2 border rounded"/>
-  <input id="corda" placeholder="Corda" class="p-2 border rounded"/>
-  <input id="tempo" placeholder="Tempo de treino" class="p-2 border rounded"/>
-  <input id="frequencia" placeholder="Frequência" class="p-2 border rounded"/>
-  <input id="telefone" placeholder="Telefone" class="p-2 border rounded"/>
-  <input id="responsavel" placeholder="Responsável" class="p-2 border rounded"/>
-  <input id="autorizacao" placeholder="Autorização" class="p-2 border rounded"/>
-  <input id="data" type="date" class="p-2 border rounded"/>
-</div>
-
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-  const nascimentoInput = document.getElementById("nascimento");
-  const idadeInput = document.getElementById("idade");
-
-  nascimentoInput.addEventListener("change", function () {
-    const nascimento = new Date(this.value);
-    const hoje = new Date();
-
-    if (!isNaN(nascimento)) {
-      let idade = hoje.getFullYear() - nascimento.getFullYear();
-      const m = hoje.getMonth() - nascimento.getMonth();
-      if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) {
-        idade--;
-      }
-      idadeInput.value = idade;
-    } else {
-      idadeInput.value = "";
-    }
-  });
-});
-</script>
-
-
- <!-- Status -->
-<div class="col-span-1 sm:col-span-3 flex flex-wrap items-center gap-3 mt-1">
-  <span class="font-semibold">Status:</span>
-  <button id="btnAtivo" class="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">Ativo</button>
-  <button id="btnDesativado" class="bg-red-700 text-white px-3 py-1 rounded hover:bg-red-800">Desativado</button>
-  <span id="statusSelecionado" class="ml-2 font-bold text-blue-700">Ativo</span>
-</div>
-
-<!-- Botões Cadastrar / Exportar -->
-<div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-center gap-4 mb-6">
-  <button id="btnCadastrar" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Cadastrar Membro</button>
-  <button id="btnExportar" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">Exportar CSV</button>
-</div>
-
-<!-- Contador -->
-<div class="grid grid-cols-2 gap-4 mb-6">
-  <div id="ativosBox" class="bg-white p-4 rounded-2xl shadow text-center font-bold text-green-700 text-lg">Ativos: 0</div>
-  <div id="desativadosBox" class="bg-white p-4 rounded-2xl shadow text-center font-bold text-red-700 text-lg">Desativados: 0</div>
-</div>
-
-<!-- Tabela -->
-<!-- === Tabela com Data de Nascimento === -->
-<div class="max-w-7xl mx-auto px-4 overflow-x-auto mb-6">
-  <table id="tabelaMembros" class="min-w-full border border-black text-sm sm:text-base bg-white">
-    <thead> <tr class="bg-gray-200"> <th class="p-2 border border-black">Nome</th> <th class="p-2 border border-black">Apelido</th> <th class="p-2 border border-black">Nascimento</th> <th class="p-2 border border-black">Idade</th> <th class="p-2 border border-black">Sexo</th> <th class="p-2 border border-black">Cidade</th> <th class="p-2 border border-black">Corda</th> <th class="p-2 border border-black">Tempo</th> <th class="p-2 border border-black">Frequência</th> <th class="p-2 border border-black">Telefone</th> <th class="p-2 border border-black">Responsável</th> <th class="p-2 border border-black">Autorização</th> <th class="p-2 border border-black">Status</th> <th class="p-2 border border-black">Data Cadastro</th> <th class="p-2 border border-black">Última Saída</th> <th class="p-2 border border-black">Ações</th> </tr> </thead> <tbody id="tabelaMembrosCorpo"></tbody> </table> </div> <!-- Gráfico --> <div class="max-w-md mx-auto bg-white p-4 rounded-lg shadow-md mb-6"> <h2 class="text-xl font-semibold mb-4 text-center">Distribuição de Membros</h2> <canvas id="graficoMembros"></canvas> </div> <!-- APP (Firebase v10 modular) --> <script type="module"> import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"; import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"; import { getFirestore, collection, addDoc, doc, setDoc, deleteDoc, getDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"; const firebaseConfig = { apiKey: "AIzaSyAzj_PW0iboc8IJPfeuI5TP5ugia-Wbzw4", authDomain: "racaguerreira-e7224.firebaseapp.com", projectId: "racaguerreira-e7224", storageBucket: "racaguerreira-e7224.appspot.com", messagingSenderId: "194977970184", appId: "1:194977970184:web:e5ffc3232d720ea710f9bd", measurementId: "G-WQ9JGE53XP" }; const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app); /* ==================== UI helpers ==================== */ const authSection = document.getElementById("authSection"); const membroSection = document.getElementById("membroSection"); const loginForm = document.getElementById("loginForm"); const cadastroForm = document.getElementById("cadastroForm"); function clearLoginErrors(){ document.getElementById("loginError").classList.add("hidden"); } function clearCadastroErrors(){ const el = document.getElementById("cadastroError"); el.classList.add("hidden"); el.textContent = ""; } function limparCamposLogin(){ document.getElementById("emailInput").value = ""; document.getElementById("passwordInput").value = ""; } function limparCamposCadastro(){ document.getElementById("cadEmailInput").value = ""; document.getElementById("cadSenhaInput").value = ""; document.getElementById("cadConfirmaSenhaInput").value = ""; } document.getElementById("showCadastro").onclick = () => { loginForm.classList.add("hidden"); cadastroForm.classList.remove("hidden"); clearLoginErrors(); clearCadastroErrors(); limparCamposLogin(); }; document.getElementById("showLogin").onclick = () => { cadastroForm.classList.add("hidden"); loginForm.classList.remove("hidden"); clearLoginErrors(); clearCadastroErrors(); limparCamposCadastro(); }; /* ==================== Auth ==================== */ document.getElementById("btnLogin").onclick = async () => { const email = document.getElementById("emailInput").value.trim(); const senha = document.getElementById("passwordInput").value.trim(); try{ await signInWithEmailAndPassword(auth, email, senha); clearLoginErrors(); }catch(e){ document.getElementById("loginError").classList.remove("hidden"); } }; document.getElementById("btnCadastro").onclick = async () => { const email = document.getElementById("cadEmailInput").value.trim(); const senha = document.getElementById("cadSenhaInput").value.trim(); const confirma = document.getElementById("cadConfirmaSenhaInput").value.trim(); const erroEl = document.getElementById("cadastroError"); erroEl.classList.add("hidden"); erroEl.textContent = ""; if(!email){ erroEl.textContent = "Informe o email."; erroEl.classList.remove("hidden"); return; } if(!senha || senha.length < 6){ erroEl.textContent = "Senha mínima de 6 caracteres."; erroEl.classList.remove("hidden"); return; } if(senha !== confirma){ erroEl.textContent = "As senhas não conferem."; erroEl.classList.remove("hidden"); return; } try{ await createUserWithEmailAndPassword(auth, email, senha); alert("Cadastro feito! Faça login."); cadastroForm.classList.add("hidden"); loginForm.classList.remove("hidden"); limparCamposCadastro(); }catch(error){ if(error.code === "auth/email-already-in-use") erroEl.textContent = "Email já cadastrado."; else if(error.code === "auth/invalid-email") erroEl.textContent = "Email inválido."; else if(error.code === "auth/weak-password") erroEl.textContent = "Senha fraca."; else erroEl.textContent = "Erro ao cadastrar: " + error.message; erroEl.classList.remove("hidden"); } }; document.getElementById("btnSair").onclick = async () => { await signOut(auth); document.getElementById("tabelaMembrosCorpo").innerHTML = ""; limparCamposLogin(); limparCamposCadastro(); clearLoginErrors(); clearCadastroErrors(); }; onAuthStateChanged(auth, (user) => { if(user){ authSection.classList.add("hidden"); membroSection.classList.remove("hidden"); iniciarListenerMembros(); // realtime }else{ authSection.classList.remove("hidden"); membroSection.classList.add("hidden"); if(unsubscribeMembros) unsubscribeMembros(); } }); /* ==================== Membros (Firestore) ==================== */ let statusAtual = "Ativo"; let editandoTr = null; let editandoDocId = null; document.getElementById("btnAtivo").onclick = () => { statusAtual="Ativo"; document.getElementById("statusSelecionado").textContent="Ativo"; }; document.getElementById("btnDesativado").onclick = () => { statusAtual="Desativado"; document.getElementById("statusSelecionado").textContent="Desativado"; }; function limparCampos(){ const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","estado","]; campos.forEach(id => { if(id==="sexo") document.getElementById(id).selectedIndex = 0; else document.getElementById(id).value = ""; }); statusAtual="Ativo"; document.getElementById("statusSelecionado").textContent = "Ativo"; editandoTr = null; editandoDocId = null; document.getElementById("btnCadastrar").textContent = "Cadastrar Membro"; } // Cadastrar / Editar document.getElementById("btnCadastrar").onclick = async () => { const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data"]; const dados = {}; campos.forEach(id => dados[id] = document.getElementById(id).value || ""); dados.status = statusAtual; if(!dados.nome.trim()){ alert("Informe o NOME."); return; } try{ if(editandoDocId){ await setDoc(doc(db,"membros", editandoDocId), dados, { merge: true }); alert("Membro atualizado!"); }else{ await addDoc(collection(db,"membros"), dados); alert("Membro cadastrado!"); } limparCampos(); }catch(e){ alert("Erro ao salvar: " + e.message); } }; // Monta linha na tabela function adicionarLinhaTabela(docId, dados){ const tr = document.createElement("tr"); tr.dataset.docId = docId; const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","data","status"]; campos.forEach(campo => { const td = document.createElement("td"); td.className = "border px-2 py-1 text-center"; if(campo==="data" && dados[campo]) { try{ td.textContent = new Date(dados[campo]).toLocaleDateString("pt-BR"); }catch{ td.textContent = dados[campo]; } } else { td.textContent = dados[campo] ?? ""; } tr.appendChild(td); }); // Ações const tdAcoes = document.createElement("td"); tdAcoes.className = "border px-2 py-1 text-center"; const wrap = document.createElement("div"); wrap.className = "flex justify-center gap-2"; const btnEditar = document.createElement("button"); btnEditar.textContent = "Editar"; btnEditar.className = "bg-yellow-400 hover:bg-yellow-500 px-2 rounded text-black"; btnEditar.onclick = () => editarMembro(docId, tr); const btnExcluir = document.createElement("button"); btnExcluir.textContent = "Excluir"; btnExcluir.className = "bg-red-600 hover:bg-red-700 px-2 rounded text-white"; btnExcluir.onclick = () => excluirMembro(docId); wrap.appendChild(btnEditar); wrap.appendChild(btnExcluir); tdAcoes.appendChild(wrap); tr.appendChild(tdAcoes); document.getElementById("tabelaMembrosCorpo").appendChild(tr); } async function editarMembro(docId, tr){ const snap = await getDoc(doc(db,"membros", docId)); if(!snap.exists()){ alert("Documento não encontrado."); return; } const dados = snap.data(); const campos = ["nome","apelido","idade","sexo","cidade","corda","tempo","frequencia","telefone","responsavel","autorizacao","status","data de entrada"]; campos.forEach(id => document.getElementById(id).value = dados[id] || (id==="sexo" ? "Masculino" : "")); statusAtual = dados.status || "Ativo"; document.getElementById("statusSelecionado").textContent = statusAtual; editandoTr = tr; editandoDocId = docId; document.getElementById("btnCadastrar").textContent = "Salvar Alterações"; window.scrollTo({ top: 0, behavior: "smooth" }); } async function excluirMembro(docId){ if(!confirm("Excluir este membro?")) return; try{ await deleteDoc(doc(db,"membros", docId)); alert("Excluído com sucesso!"); }catch(e){ alert("Erro ao excluir: " + e.message); } } // Pesquisa (cliente) document.getElementById("searchInput").addEventListener("input", () => { const filtro = document.getElementById("searchInput").value.toLowerCase(); const linhas = document.querySelectorAll("#tabelaMembrosCorpo tr"); linhas.forEach(linha => { const texto = linha.innerText.toLowerCase(); linha.style.display = texto.includes(filtro) ? "" : "none"; }); }); // === Gráfico e Contadores === function agruparPorMes(membros){ const ganhos={}; const perdas={}; membros.forEach(d=>{ if(d.status==="Ativo" && d.data){ try{ const dt = new Date(d.data); const mesAno = dt.toLocaleString("pt-BR",{month:"short",year:"numeric"}); ganhos[mesAno] = (ganhos[mesAno]||0)+1; }catch{} } if(d.status==="Desativado" && d.data){ try{ const dt = new Date(d.data); const mesAno = dt.toLocaleString("pt-BR",{month:"short",year:"numeric"}); perdas[mesAno] = (perdas[mesAno]||0)+1; }catch{} } if(Array.isArray(d.historico)){ d.historico.forEach(h=>{ if((h.status==="Ativo"||h.status==="Voltou a treinar") && h.data){ try{ const dt = new Date(h.data); const mesAno = dt.toLocaleString("pt-BR",{month:"short",year:"numeric"}); ganhos[mesAno] = (ganhos[mesAno]||0)+1; }catch{} } if(h.status==="Desativado" && h.data){ try{ const dt = new Date(h.data); const mesAno = dt.toLocaleString("pt-BR",{month:"short",year:"numeric"}); perdas[mesAno] = (perdas[mesAno]||0)+1; }catch{} } }); } }); return {ganhos, perdas}; } function gerarGrafico(membros){ if(!membros||membros.length===0) return; const {ganhos,perdas} = agruparPorMes(membros); const meses = [...new Set([...Object.keys(ganhos), ...Object.keys(perdas)])].sort((a,b)=>new Date("01 "+a) - new Date("01 "+b)); const dadosGanhos = meses.map(m=>ganhos[m]||0); const dadosPerdas = meses.map(m=>perdas[m]||0); const ctx = document.getElementById("graficoMembros").getContext("2d"); if(grafico) grafico.destroy(); grafico = new Chart(ctx,{ type:"bar", data:{ labels: meses, datasets:[ {label:"Entraram", data:dadosGanhos, backgroundColor:"rgba(34,197,94,0.7)", borderColor:"rgba(34,197,94,1)", borderWidth:1}, {label:"Saíram", data:dadosPerdas, backgroundColor:"rgba(239,68,68,0.7)", borderColor:"rgba(239,68,68,1)", borderWidth:1} ] }, options:{ responsive:true, plugins:{legend:{position:"top"}, title:{display:true, text:"Entradas e Saídas Mensais", font:{size:18,weight:"bold"}}}, scales:{x:{title:{display:true,text:"Mês",font:{size:14}}},y:{beginAtZero:true,title:{display:true,text:"Quantidade",font:{size:14}}}} } }); } // === Listener Membros com Contadores === function iniciarListenerMembros(){ const corpo = document.getElementById("tabelaMembrosCorpo"); const ativosBox = document.getElementById("ativosBox"); const desativadosBox = document.getElementById("desativadosBox"); if(unsubscribeMembros) unsubscribeMembros(); const q = query(collection(db,"membros"), orderBy("nome")); unsubscribeMembros = onSnapshot(q, (snap) => { corpo.innerHTML = ""; let countAtivos = 0; let countDesativados = 0; const membrosArray = []; snap.forEach(docu=>{ const dados = docu.data(); membrosArray.push(dados); adicionarLinhaTabela(docu.id, dados); if(dados.status === "Ativo") countAtivos++; else if(dados.status === "Desativado") countDesativados++; }); ativosBox.textContent = Ativos: ${countAtivos}; desativadosBox.textContent = Desativados: ${countDesativados}; gerarGrafico(membrosArray); }, (err)=>{ alert("Erro ao carregar membros: "+err.message); }); } // === Autenticação === onAuthStateChanged(auth, user=>{ const membroSection = document.getElementById("membroSection"); const authSection = document.getElementById("authSection"); if(user){ authSection.classList.add("hidden"); membroSection.classList.remove("hidden"); iniciarListenerMembros(); } else { authSection.classList.remove("hidden"); membroSection.classList.add("hidden"); if(unsubscribeMembros) unsubscribeMembros(); } }); </script>
-
-
+    <div class="mb-4">
+      <canvas id="graficoMembros" height="200"></canvas>
+    </div>
+  </section>
+</body>
+</html>
 
 
